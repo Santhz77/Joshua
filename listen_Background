@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+
+# NOTE: this example requires PyAudio because it uses the Microphone class
+
+import speech_recognition as sr
+
+import os.path, sys
+
+import json
+import subprocess
+
+try:
+    import apiai
+except ImportError:
+    sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
+    import apiai
+
+CLIENT_ACCESS_TOKEN = '36c01ebca01b4673a0048e10de89ac3c'
+SUBSCRIPTION_KEY = 'fee3a30c-eb42-4ae9-8fff-73d5d14f54bb'
+
+def main(response_string):
+    ai = apiai.ApiAI(CLIENT_ACCESS_TOKEN, SUBSCRIPTION_KEY)
+
+    request = ai.text_request()
+
+    request.lang = 'en' # optional, default value equal 'en'
+
+    request.query = response_string
+
+    response = request.getresponse()
+    response_inbytes = response.read()
+    response_string = response_inbytes.decode()
+    readjson(response_string)
+
+
+def readjson(responseString):
+    jsonResponseData = json.loads(responseString)
+    print(jsonResponseData["timestamp"])
+    print(jsonResponseData["result"]["resolvedQuery"])
+    fulfilment_speech = jsonResponseData["result"]["fulfillment"]["speech"]
+    print(fulfilment_speech)
+    subprocess.Popen(["espeak",fulfilment_speech])
+
+
+# this is called from the background thread
+def callback(recognizer, audio):
+    # received audio data, now we'll recognize it using Google Speech Recognition
+    try:
+        # for testing purposes, we're just using the default API key
+        # to use another API key, use `r.recognize_google(audio, key="GOOGLE_SPEECH_RECOGNITION_API_KEY")`
+        # instead of `r.recognize_google(audio)`
+        responseString = recognizer.recognize_google(audio)
+        print("Google Speech Recognition thinks you said " + responseString)
+        if recognizer.recognize_google(audio) == "stop":
+            stop_listening()
+        else:
+            main(responseString)
+
+    except sr.UnknownValueError:
+        print("Google Speech Recognition could not understand audio")
+    except sr.RequestError as e:
+        print("Could not request results from Google Speech Recognition service; {0}".format(e))
+
+r = sr.Recognizer()
+m = sr.Microphone()
+with m as source:
+    r.adjust_for_ambient_noise(source) # we only need to calibrate once, before we start listening
+
+# start listening in the background (note that we don't have to do this inside a `with` statement)
+stop_listening = r.listen_in_background(m, callback)
+# `stop_listening` is now a function that, when called, stops background listening
+
+# do some other computation for 5 seconds, then stop listening and keep doing other computations
+import time
+#for _ in range(50): time.sleep(0.1) # we're still listening even though the main thread is doing other things
+#stop_listening() # calling this function requests that the background listener stop listening
+while True:
+    time.sleep(0.5)
